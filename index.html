@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#171722">
+<title>Photo Editor PRO — Chrome</title>
+<style>
+:root{color-scheme:dark;--bg:#11111a;--panel:#20202c;--edge:#393949;--txt:#f6f5fb;--muted:#b9b7c6;--accent:#b8a5ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
+header{padding:calc(16px + env(safe-area-inset-top)) 16px 16px;background:#191925;border-bottom:1px solid var(--edge)}
+h1{font-size:22px;margin:0 0 5px}header p{font-size:13px;color:var(--muted);margin:0;line-height:1.4}
+main{max-width:760px;margin:auto;padding:12px;display:grid;gap:12px}.card{background:var(--panel);border:1px solid var(--edge);border-radius:18px;padding:14px}
+h2{font-size:17px;margin:0 0 12px}.hint{font-size:13px;color:var(--muted);line-height:1.5;margin:8px 0}
+input[type=file]{width:100%;padding:12px;border:1px dashed #77728f;border-radius:12px;background:#171722;color:var(--txt);font-size:14px}
+.preview{margin-top:12px;min-height:170px;background:#090910;border-radius:13px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#result{display:block;width:100%;height:auto;max-height:62vh;object-fit:contain}
+.empty{padding:35px 18px;text-align:center;color:var(--muted);line-height:1.5}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button{border:0;border-radius:13px;min-height:48px;padding:12px 14px;background:var(--accent);color:#171322;font-weight:700;font-size:15px;flex:1;cursor:pointer}
+button.secondary{background:#30303e;border:1px solid #464657;color:var(--txt)}
+button:disabled{opacity:.38}
+textarea{display:block;width:100%;min-height:210px;border:1px solid #49495b;border-radius:13px;background:#151520;color:#fff;padding:12px;font:15px/1.55 ui-monospace,Menlo,monospace;resize:vertical}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}.control label{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:5px}.control output{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent);height:26px}
+.status{font-size:13px;color:#d9ceff;line-height:1.4;min-height:18px;margin-top:9px;overflow-wrap:anywhere}
+@media(max-width:540px){main{padding:9px}.card{padding:12px}.grid{grid-template-columns:1fr;gap:10px}.row button{min-width:30%}}
+</style>
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Фото Редактор">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+</head>
+<body>
+<header><h1>Фото Редактор</h1><p>Работает в Google Chrome и Safari • загрузка фото • автоматическая обработка • сохранение</p></header>
+<main>
+<section class="card">
+<h2>1. Добавить фотографию</h2>
+<input id="picker" type="file" accept="image/*">
+<p class="hint">В Chrome нажми «Выбрать файл» и выбери снимок через «Фото» или «Файлы». Для максимальной совместимости выбирай JPEG или PNG. После выбора превью появится ниже.</p>
+<div class="preview" id="preview"><div class="empty" id="empty">Фотография ещё не выбрана</div></div>
+<div class="row">
+<button class="secondary" id="before" disabled>Показать оригинал</button>
+<button class="secondary" id="reset" disabled>Сбросить</button>
+<button id="save" disabled>Сохранить фото</button>
+</div>
+<div class="status" id="photoStatus" role="status" aria-live="polite"></div>
+</section>
+
+<section class="card">
+<h2>2. Вставить настройки списком</h2>
+<p class="hint">Вставь строки «Параметр +значение». Можно использовать минус − или дефис -.</p>
+<textarea id="preset" autocapitalize="off" spellcheck="false">Экспозиция +12
+Блеск +38
+Светлые участки -40
+Тёмные участки +45
+Контраст +22
+Яркость +12
+Точка чёрного +20
+Насыщенность +12
+Красочность +25
+Теплота -8
+Оттенок +3
+Чёткость +30
+Резкость +20
+Виньетка +22</textarea>
+<div class="row">
+<button id="apply">Применить настройки</button>
+<button class="secondary" id="defaults">Вернуть пример</button>
+</div>
+<div class="status" id="presetStatus" role="status" aria-live="polite"></div>
+</section>
+
+<section class="card">
+<h2>3. Настроить вручную</h2>
+<div class="grid" id="sliders"></div>
+<p class="hint">Изменения применяются автоматически. Последние значения сохраняются в этом браузере.</p>
+</section>
+</main>
+<script>
+(function(){
+'use strict';
+const definitions=[
+['exposure','Экспозиция',-100,100],['brilliance','Блеск',-100,100],
+['highlights','Светлые участки',-100,100],['shadows','Тёмные участки',-100,100],
+['contrast','Контраст',-100,100],['brightness','Яркость',-100,100],
+['black','Точка чёрного',-100,100],['saturation','Насыщенность',-100,100],
+['vibrance','Красочность',-100,100],['warmth','Теплота',-100,100],
+['tint','Оттенок',-100,100],['clarity','Чёткость',0,100],
+['sharpness','Резкость',0,100],['vignette','Виньетка',0,100]
+];
+const aliases={
+'экспозиция':'exposure','блеск':'brilliance','светлые участки':'highlights',
+'тёмные участки':'shadows','темные участки':'shadows','контраст':'contrast',
+'яркость':'brightness','точка чёрного':'black','точка черного':'black',
+'насыщенность':'saturation','красочность':'vibrance','теплота':'warmth',
+'оттенок':'tint','чёткость':'clarity','четкость':'clarity','резкость':'sharpness','виньетка':'vignette'
+};
+const defaults={
+exposure:12,brilliance:38,highlights:-40,shadows:45,contrast:22,brightness:12,
+black:20,saturation:12,vibrance:25,warmth:-8,tint:3,clarity:30,sharpness:20,vignette:22
+};
+const values=Object.assign({},defaults);
+const $=id=>document.getElementById(id);
+const picker=$('picker'), preview=$('preview'), photoStatus=$('photoStatus');
+const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+let sourceCanvas=null,loaded=false,showingOriginal=false,renderToken=0;
+const sliderHost=$('sliders');
+definitions.forEach(([id,label,min,max])=>{
+ const wrap=document.createElement('div');wrap.className='control';
+ const lab=document.createElement('label');lab.htmlFor='range-'+id;
+ const title=document.createElement('span');title.textContent=label;
+ const out=document.createElement('output');out.id='out-'+id;
+ lab.append(title,out);
+ const range=document.createElement('input');range.type='range';range.id='range-'+id;range.min=min;range.max=max;range.step='1';range.value=values[id];
+ range.addEventListener('input',()=>{setValue(id,Number(range.value),false);render()});
+ wrap.append(lab,range);sliderHost.append(wrap);setValue(id,values[id],false);
+});
+function setValue(id,value,persist=true){
+ const def=definitions.find(d=>d[0]===id);if(!def)return;
+ value=Math.max(def[2],Math.min(def[3],Math.round(Number(value)||0)));
+ values[id]=value;$('range-'+id).value=value;$('out-'+id).textContent=(value>0?'+':'')+value;
+ if(persist){try{localStorage.setItem('photo-editor-values-v2',JSON.stringify(values))}catch(e){}}
+}
+function syncText(){ $('preset').value=definitions.map(d=>d[1]+' '+(values[d[0]]>0?'+':'')+values[d[0]]).join('\n');}
+function loadImageFile(file){
+ if(!file){return}
+ if(!file.type || !file.type.startsWith('image/')){photoStatus.textContent='Это не изображение. Выбери фотографию JPG, PNG или HEIC.';return}
+ photoStatus.textContent='Загружаю фотографию…';
+ const reader=new FileReader();
+ reader.onerror=()=>{photoStatus.textContent='Не удалось прочитать файл. Попробуй выбрать фото ещё раз.'};
+ reader.onload=()=>{
+  const image=new Image();
+  image.onload=()=>{
+   try{
+    const maxSide=2400,scale=Math.min(1,maxSide/Math.max(image.naturalWidth,image.naturalHeight));
+    const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale));
+    canvas.width=w;canvas.height=h;ctx.clearRect(0,0,w,h);ctx.drawImage(image,0,0,w,h);
+    sourceCanvas=document.createElement('canvas');sourceCanvas.width=w;sourceCanvas.height=h;
+    sourceCanvas.getContext('2d').drawImage(image,0,0,w,h);
+    loaded=true;showingOriginal=false;
+    preview.replaceChildren(canvas);
+    $('before').disabled=false;$('reset').disabled=false;$('save').disabled=false;
+    $('before').textContent='Показать оригинал';
+    render();photoStatus.textContent='Фото загружено. Теперь нажми «Применить настройки» или двигай ползунки.';
+   }catch(err){photoStatus.textContent='Не удалось открыть эту фотографию. Попробуй экспортировать её как JPEG и выбрать снова.'}
+  };
+  image.onerror=()=>{photoStatus.textContent='Chrome не смог прочитать этот формат. В приложении «Фото» сохрани снимок как JPEG или PNG и выбери его.'};
+  image.src=reader.result;
+ };
+ reader.readAsDataURL(file);
+}
+picker.addEventListener('change',()=>{const f=picker.files&&picker.files[0];if(f)loadImageFile(f)});
+function render(){
+ if(!loaded||!sourceCanvas||showingOriginal)return;
+ const token=++renderToken;
+ requestAnimationFrame(()=>{
+  if(token!==renderToken||showingOriginal)return;
+  const w=sourceCanvas.width,h=sourceCanvas.height;
+  ctx.drawImage(sourceCanvas,0,0,w,h);
+  let imageData;
+  try{imageData=ctx.getImageData(0,0,w,h)}catch(e){photoStatus.textContent='Не удалось обработать фото в памяти браузера.';return}
+  const d=imageData.data,v=values,exposure=Math.pow(2,v.exposure/100),contrast=1+v.contrast/100;
+  const sat=1+v.saturation/100,centerX=w/2,centerY=h/2,maxDist=Math.sqrt(centerX*centerX+centerY*centerY);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+   const i=(y*w+x)*4;let r=d[i],g=d[i+1],b=d[i+2];
+   const lum=(.2126*r+.7152*g+.0722*b)/255;
+   const shadow=(1-lum)*(1-lum)*v.shadows*.72,highlight=lum*lum*v.highlights*.55,brilliance=v.brilliance*.35,bright=v.brightness*.45;
+   r=r*exposure+shadow+highlight+brilliance+bright;
+   g=g*exposure+shadow+highlight+brilliance+bright;
+   b=b*exposure+shadow+highlight+brilliance+bright;
+   const gray=.2126*r+.7152*g+.0722*b;
+   r=gray+(r-gray)*sat;g=gray+(g-gray)*sat;b=gray+(b-gray)*sat;
+   const max=Math.max(r,g,b),min=Math.min(r,g,b),boost=1+(v.vibrance/100)*(1-(max-min)/255);
+   const avg=(r+g+b)/3;r=avg+(r-avg)*boost;g=avg+(g-avg)*boost;b=avg+(b-avg)*boost;
+   r+=v.warmth*.42+v.tint*.18;g+=v.tint*.12;b-=v.warmth*.42+v.tint*.18;
+   r=(r-128)*contrast+128-v.black*.48;g=(g-128)*contrast+128-v.black*.48;b=(b-128)*contrast+128-v.black*.48;
+   const clarity=v.clarity/100*.16;
+   if(clarity){r=(r-128)*(1+clarity)+128;g=(g-128)*(1+clarity)+128;b=(b-128)*(1+clarity)+128}
+   if(v.vignette){const dist=Math.sqrt((x-centerX)**2+(y-centerY)**2)/maxDist;const factor=1-(v.vignette/100)*.55*Math.pow(dist,1.8);r*=factor;g*=factor;b*=factor}
+   d[i]=Math.max(0,Math.min(255,r));d[i+1]=Math.max(0,Math.min(255,g));d[i+2]=Math.max(0,Math.min(255,b));
+  }
+  ctx.putImageData(imageData,0,0);
+  if(v.sharpness>0){
+   const tmp=document.createElement('canvas');tmp.width=w;tmp.height=h;tmp.getContext('2d').drawImage(canvas,0,0);
+   ctx.save();ctx.globalAlpha=(v.sharpness/100)*.16;ctx.filter='contrast(125%)';ctx.drawImage(tmp,0,0);ctx.restore();ctx.filter='none';
+  }
+ });
+}
+$('apply').addEventListener('click',()=>{
+ const lines=$('preset').value.split(/\r?\n/);let count=0,unknown=[];
+ for(const line of lines){
+  const m=line.trim().replace(/[−–]/g,'-').match(/^(.+?)\s*[:=]?\s*([+-]?\s*\d+)\s*$/);
+  if(!m)continue;
+  const key=m[1].trim().toLowerCase().replace(/\s+/g,' ');
+  const id=aliases[key];
+  if(id){setValue(id,parseInt(m[2].replace(/\s/g,''),10));count++}
+  else if(!['параметр','значение','параметр значение'].includes(key))unknown.push(m[1].trim());
+ }
+ if(count){render();$('presetStatus').textContent='Успешно применено параметров: '+count+'.';if(unknown.length)$('presetStatus').textContent+=' Не распознано: '+unknown.join(', ')}
+ else $('presetStatus').textContent='Не распознаны строки. Формат: Экспозиция +20 — каждая настройка с новой строки.';
+});
+$('defaults').addEventListener('click',()=>{definitions.forEach(d=>setValue(d[0],defaults[d[0]]));syncText();render();$('presetStatus').textContent='Пример настроек восстановлен.'});
+$('before').addEventListener('click',()=>{
+ if(!loaded)return;showingOriginal=!showingOriginal;
+ if(showingOriginal){ctx.drawImage(sourceCanvas,0,0);$('before').textContent='Показать обработку'}
+ else{$('before').textContent='Показать оригинал';render()}
+});
+$('reset').addEventListener('click',()=>{definitions.forEach(d=>setValue(d[0],0));syncText();render();$('presetStatus').textContent='Все значения сброшены.'});
+$('save').addEventListener('click',()=>{
+ if(!loaded)return;
+ if(showingOriginal){showingOriginal=false;$('before').textContent='Показать оригинал';render()}
+ photoStatus.textContent='Готовлю фото для сохранения…';
+ canvas.toBlob(async blob=>{
+  if(!blob){photoStatus.textContent='Не удалось подготовить изображение.';return}
+  const file=new File([blob],'photo-edited.jpg',{type:'image/jpeg'});
+  try{
+   if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+    await navigator.share({files:[file],title:'Обработанная фотография'});
+    photoStatus.textContent='Открылось меню «Поделиться». Выбери «Сохранить изображение» или «Сохранить в Файлы».';
+    return;
+   }
+  }catch(e){if(e.name==='AbortError'){photoStatus.textContent='Сохранение отменено.';return}}
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='photo-edited.jpg';document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+  photoStatus.textContent='Файл подготовлен. Проверь папку «Загрузки». На iPhone открой меню «Поделиться» и выбери «Сохранить изображение».';
+ },'image/jpeg',.94);
+});
+try{
+ const saved=JSON.parse(localStorage.getItem('photo-editor-values-v2')||'null');
+ if(saved){definitions.forEach(d=>{if(Number.isFinite(saved[d[0]]))setValue(d[0],saved[d[0]],false)});}
+ syncText();
+}catch(e){}
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
